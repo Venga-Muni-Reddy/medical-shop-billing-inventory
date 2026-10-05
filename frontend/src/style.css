@@ -27,3 +27,11 @@ td input{min-width:70px;padding:6px 8px}
 .docimg{max-width:100%;border:1px solid #dde7e4;border-radius:8px}
 .hint{background:#e9f5f2;border-radius:8px;padding:10px 14px;font-size:14px;margin-bottom:14px}
 .cart td:last-child{text-align:right}
+
+.prog{display:flex;gap:14px;align-items:center;justify-content:center;text-align:left;margin-top:8px}
+.spin{width:30px;height:30px;border:4px solid #cfe5df;border-top-color:#0b7a64;border-radius:50%;animation:sp .8s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+.bar{height:8px;background:#dcebe7;border-radius:6px;overflow:hidden;margin:6px 0;min-width:220px}
+.fill{height:100%;background:#0b7a64;transition:width .2s}
+.fill.ind{background:linear-gradient(90deg,#0b7a64 0,#6fc2b0 50%,#0b7a64 100%);background-size:200% 100%;animation:sh 1.2s linear infinite}
+@keyframes sh{to{background-position:-200% 0}}
