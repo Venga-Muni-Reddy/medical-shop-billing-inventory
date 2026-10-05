@@ -19,7 +19,7 @@ def parse_date(v, expiry=False):
     """Accepts 2027-03-31, 31/03/2027, 03/27, 03/2027, Mar-2027, March 2027 ... Month-only dates become the last day of the month (expiry convention)."""
     if v in (None, ""): return None
     s = str(v).strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d %b %Y", "%d %B %Y", "%b %d, %Y"):
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y", "%d %b %Y", "%d %B %Y", "%b %d, %Y", "%d-%b-%Y", "%d-%b-%y", "%d-%B-%Y", "%d %b, %Y", "%d/%b/%Y"):
         try: return datetime.strptime(s, fmt).date()
         except ValueError: pass
     m = re.match(r"^(\d{1,2})\s*[/\-.]\s*(\d{2}|\d{4})$", s)
@@ -37,7 +37,7 @@ def size_norm(v):
     s = (str(v or "")).strip()
     m = re.match(r"^(\d+(?:\.\d+)?)\s*(mg|mcg|g|gm|kg|ml|l|ltr|litre|liter|litres|iu|%)\b(.*)$", s, re.I)
     if not m: return s
-    unit = m.group(2).lower(); unit = {"gm": "g", "ltr": "L", "litre": "L", "liter": "L", "litres": "L", "l": "L"}.get(unit, unit)
+    unit = m.group(2).lower(); unit = {"iu": "IU", "gm": "g", "ltr": "L", "litre": "L", "liter": "L", "litres": "L", "l": "L"}.get(unit, unit)
     return f"{m.group(1)} {unit}{m.group(3)}".strip()
 
 def normalize(raw: dict) -> dict:
