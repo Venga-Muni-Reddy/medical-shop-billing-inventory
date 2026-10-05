@@ -113,11 +113,23 @@ function Purchases() {
   const [list, setList] = useState(null); const [busy, setBusy] = useState(false); const [err, setErr] = useState('')
   const load = () => api('/purchases').then(setList).catch(e => setErr(e.message))
   useEffect(() => { load() }, [])
-  const upload = async e => {
-    const f = e.target.files[0]; if (!f) return
-    setBusy(true); setErr('')
-    try { const fd = new FormData(); fd.append('file', f); const r = await api('/purchases/extract', { method: 'POST', body: fd }); go('#/purchases/' + r.id) }
-    catch (x) { setErr(x.message); setBusy(false) }
+  const [file, setFile] = useState(null); const [stage, setStage] = useState(''); const [pct, setPct] = useState(0); const [secs, setSecs] = useState(0)
+  useEffect(() => { if (stage !== 'reading') return; setSecs(0); const t = setInterval(() => setSecs(x => x + 1), 1000); return () => clearInterval(t) }, [stage])
+  const pick = e => { setFile(e.target.files[0] || null); setErr('') }
+  const upload = () => {
+    if (!file || busy) return
+    setBusy(true); setErr(''); setStage('uploading'); setPct(0)
+    const fd = new FormData(); fd.append('file', file)
+    const x = new XMLHttpRequest(); x.open('POST', '/api/purchases/extract')
+    x.upload.onprogress = ev => { if (ev.lengthComputable) setPct(Math.round(ev.loaded * 100 / ev.total)) }
+    x.upload.onload = () => { setPct(100); setStage('reading') }
+    x.onload = () => {
+      let j = {}; try { j = JSON.parse(x.responseText) } catch (_) {}
+      if (x.status >= 200 && x.status < 300) go('#/purchases/' + j.id)
+      else { setErr(typeof j.detail === 'string' ? j.detail : 'Upload failed (' + x.status + ')'); setBusy(false); setStage('') }
+    }
+    x.onerror = () => { setErr('Network problem. Please try again.'); setBusy(false); setStage('') }
+    x.send(fd)
   }
   const manual = async () => { const r = await post('/purchases'); go('#/purchases/' + r.id) }
   return (
@@ -125,9 +137,17 @@ function Purchases() {
       <h2>Purchases (supplier invoices)</h2>
       <div className="card">
         <div className="drop">
-          <p><b>{busy ? 'Reading the invoice with AI... this can take up to a minute.' : 'Upload a supplier invoice'}</b></p>
+          <p><b>Upload a supplier invoice</b></p>
           <p className="muted">Photo (JPG, PNG, WEBP) or PDF, up to 6 MB. Any layout. You review everything before it is saved.</p>
-          <input type="file" accept="image/*,application/pdf" onChange={upload} disabled={busy} style={{ maxWidth: 320 }} />
+          {!busy && <input type="file" accept="image/*,application/pdf" onChange={pick} style={{ maxWidth: 320 }} />}
+          {file && !busy && <p className="muted">Selected: <b>{file.name}</b> ({(file.size / 1024).toFixed(0)} KB)</p>}
+          {!busy && <p><button className="btn" disabled={!file} onClick={upload}>Upload and read invoice</button></p>}
+          {busy && <div className="prog">
+            <div className="spin" />
+            <div><b>{stage === 'uploading' ? 'Uploading ' + (file && file.name) + '... ' + pct + '%' : 'AI is reading your invoice... ' + secs + 's'}</b>
+              <div className="bar"><div className={stage === 'reading' ? 'fill ind' : 'fill'} style={{ width: stage === 'reading' ? '100%' : pct + '%' }} /></div>
+              <span className="muted">{stage === 'reading' ? 'This usually takes 20-60 seconds. Please keep this page open.' : 'Sending the file to the server.'}</span></div>
+          </div>}
         </div>
         <p className="muted">No invoice file or the reading failed? <button className="btn ghost sm" onClick={manual}>Enter an invoice manually</button></p>
         {err && <p className="err">{err}</p>}
