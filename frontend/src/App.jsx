@@ -179,9 +179,10 @@ function PurchaseEdit({ id }) {
             <div className="f"><label>Shop address</label>{I('buyer_address')}</div>
             <div className="grid g2"><div className="f"><label>Invoice no.</label>{I('invoice_no')}</div><div className="f"><label>Invoice date</label>{I('invoice_date', { type: 'date' })}</div></div>
           </div>
-          {p.has_doc && <div className="card"><h3>Original document</h3>{p.filename && /\.pdf$/i.test(p.filename) ? <a href={'/api/purchases/' + id + '/document'} target="_blank" rel="noreferrer">Open the PDF</a> : <a href={'/api/purchases/' + id + '/document'} target="_blank" rel="noreferrer"><img className="docimg" src={'/api/purchases/' + id + '/document'} alt="Invoice" /></a>}</div>}
         </div>
-        <div className="card tw"><h3>Medicines ({d.items.length})</h3>
+        {p.has_doc && <div><div className="card"><h3>Original document</h3>{p.filename && /\.pdf$/i.test(p.filename) ? <a href={'/api/purchases/' + id + '/document'} target="_blank" rel="noreferrer">Open the PDF</a> : <a href={'/api/purchases/' + id + '/document'} target="_blank" rel="noreferrer"><img className="docimg" src={'/api/purchases/' + id + '/document'} alt="Invoice" /></a>}</div></div>}
+      </div>
+        <div className="card tw" style={{ marginTop: 14 }}><h3>Medicines ({d.items.length})</h3>
           <table><thead><tr><th>Name *</th><th>Size</th><th>Batch *</th><th>Expiry *</th><th>Qty *</th><th>Buy price</th><th>MRP</th>{!ro && <th></th>}</tr></thead>
             <tbody>{d.items.map((it, i) => <tr key={i}>
               <td><input value={it.name} disabled={ro} onChange={e => setItem(i, 'name', e.target.value)} style={{ minWidth: 150 }} /></td>
@@ -194,7 +195,6 @@ function PurchaseEdit({ id }) {
               {!ro && <td><button className="link btn danger sm" onClick={() => set('items', d.items.filter((_, j) => j !== i))}>Remove</button></td>}</tr>)}</tbody></table>
           {!ro && <p><button className="btn ghost sm" onClick={() => set('items', [...d.items, { ...blank }])}>+ Add medicine line</button></p>}
         </div>
-      </div>
       {err && <p className="err">{err}</p>}{msg && <p className="okmsg">{msg}</p>}
       {!ro && <div className="row"><button className="btn" disabled={busy} onClick={confirm}>Confirm and add to stock</button><button className="btn ghost" disabled={busy} onClick={save}>Save and re-check</button><button className="btn danger" onClick={del}>Delete draft</button></div>}
       {ro && <p className="muted">This purchase is confirmed and its batches are in stock. Edit batch details from the Stock page.</p>}
