@@ -170,6 +170,20 @@ async def extract_invoice(req: Request, file: UploadFile = File(...)):
              (o["id"], getattr(ex, "used", None) or ex.name, (file.filename or "invoice")[:120], mime, data, json.dumps(n["draft"]), json.dumps(warnings + n["warnings"])), one=True)
     return purchase_out(get_purchase(p["id"], o["id"]))
 
+@app.post("/api/purchases/{pid}/reextract")
+def reextract(pid: int, req: Request):
+    o = owner_of(req); limit("extract:" + str(o["id"]), 20, 3600)
+    p = db.q("SELECT id, status, source, mime, doc FROM purchases WHERE id=%s AND owner_id=%s", (pid, o["id"]), one=True)
+    if not p: raise HTTPException(404, "Purchase not found")
+    if p["status"] != "draft" or not p["doc"]: raise HTTPException(409, "Nothing to re-read")
+    ex = extract.get_extractor(); warnings, raw = [], {}
+    try: raw = ex.extract(bytes(p["doc"]), p["mime"])
+    except extract.ExtractionError as e: warnings.append(str(e))
+    except Exception as e: warnings.append(f"Extraction failed ({type(e).__name__}). Please enter the invoice manually.")
+    n = normalize.normalize(raw)
+    db.q("UPDATE purchases SET draft=%s::jsonb, warnings=%s::jsonb, extractor=%s WHERE id=%s", (json.dumps(n["draft"]), json.dumps(warnings + n["warnings"]), getattr(ex, "used", None) or ex.name, pid))
+    return purchase_out(get_purchase(pid, o["id"]))
+
 @app.post("/api/purchases")
 def new_manual_purchase(req: Request):
     o = owner_of(req)
