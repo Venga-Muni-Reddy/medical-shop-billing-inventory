@@ -7,7 +7,7 @@ engine never touches the database or API code.
 RAW shape: {"supplier":{"name","address"}, "buyer":{"name","address"}, "invoice_no", "invoice_date",
             "items":[{"name","size","batch_no","expiry","qty","purchase_price","mrp"}]}
 """
-import os, io, re, json, base64
+import time, os, io, re, json, base64
 import httpx
 
 class ExtractionError(Exception): pass
@@ -54,19 +54,23 @@ class OpenRouterVision(Extractor):
         content = [{"type": "text", "text": PROMPT}] + [
             {"type": "image_url", "image_url": {"url": "data:%s;base64,%s" % ("image/png" if mime == "application/pdf" else mime, base64.b64encode(i).decode())}} for i in images]
         last = "no model answered"
-        for model in self.models:
-            try:
-                r = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=100,
-                               headers={"Authorization": f"Bearer {self.key}"},
-                               json={"model": model, "temperature": 0, "max_tokens": 3000, "messages": [{"role": "user", "content": content}]})
-                if r.status_code != 200:
-                    last = f"{model}: HTTP {r.status_code}"; continue
-                msg = r.json()["choices"][0]["message"].get("content") or ""
-                raw = parse_json(msg)
-                self.used = model
-                return raw
-            except (ExtractionError, httpx.HTTPError, KeyError, IndexError) as e:
-                last = f"{model}: {e}"
+        for attempt in range(2):
+            if attempt: time.sleep(6)
+            busy = False
+            for model in self.models:
+                try:
+                    r = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=40,
+                                   headers={"Authorization": f"Bearer {self.key}"},
+                                   json={"model": model, "temperature": 0, "max_tokens": 3000, "messages": [{"role": "user", "content": content}]})
+                    if r.status_code != 200:
+                        last = f"{model}: HTTP {r.status_code}"; busy = busy or r.status_code in (429, 502, 503); continue
+                    msg = r.json()["choices"][0]["message"].get("content") or ""
+                    raw = parse_json(msg)
+                    self.used = model
+                    return raw
+                except (ExtractionError, httpx.HTTPError, KeyError, IndexError) as ex_:
+                    last = f"{model}: {ex_}"
+            if not busy: break
         raise ExtractionError("AI extraction failed (" + last + "). Please enter the invoice manually or try again.")
 
 EXTRACTORS = {"openrouter-vision": OpenRouterVision}
