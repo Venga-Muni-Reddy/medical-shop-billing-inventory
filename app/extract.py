@@ -63,7 +63,7 @@ class OpenRouterVision(Extractor):
                                    headers={"Authorization": f"Bearer {self.key}"},
                                    json={"model": model, "temperature": 0, "max_tokens": 3000, "messages": [{"role": "user", "content": content}]})
                     if r.status_code != 200:
-                        last = f"{model}: HTTP {r.status_code}"; busy = busy or r.status_code in (429, 502, 503); continue
+                        last = f"{model}: HTTP {r.status_code}"; print("OCR_FAIL", model, r.status_code, r.text[:300], flush=True); busy = busy or r.status_code in (429, 502, 503); continue
                     msg = r.json()["choices"][0]["message"].get("content") or ""
                     raw = parse_json(msg)
                     self.used = model
