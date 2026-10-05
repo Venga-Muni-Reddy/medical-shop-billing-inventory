@@ -131,6 +131,7 @@ function Purchases() {
     x.onerror = () => { setErr('Network problem. Please try again.'); setBusy(false); setStage('') }
     x.send(fd)
   }
+  const remove = async p => { if (!window.confirm('Delete draft #' + p.id + (p.supplier ? ' (' + p.supplier + ')' : '') + '? This cannot be undone.')) return; try { await api('/purchases/' + p.id, { method: 'DELETE' }); load() } catch (x) { setErr(x.message) } }
   const manual = async () => { const r = await post('/purchases'); go('#/purchases/' + r.id) }
   return (
     <div>
@@ -157,7 +158,7 @@ function Purchases() {
           <tbody>{list && list.map(p => <tr key={p.id}><td>{p.id}</td><td>{p.supplier || '-'}</td><td>{p.invoice_no || '-'} {p.invoice_date && <span className="muted">({fdate(p.invoice_date)})</span>}</td><td>{p.lines}</td>
             <td>{p.source === 'ai' ? 'Uploaded file' : 'Typed in'}</td>
             <td>{p.status === 'draft' ? (p.source === 'ai' && !p.lines ? <span className="tag t-low">AI reading failed</span> : <span className="tag t-draft">Needs review</span>) : <span className="tag t-ok">In stock</span>}</td>
-            <td><a className="btn ghost sm" href={'#/purchases/' + p.id}>{p.status === 'draft' ? 'Review' : 'View'}</a></td></tr>)}
+            <td style={{ whiteSpace: 'nowrap' }}><a className="btn ghost sm" href={'#/purchases/' + p.id}>{p.status === 'draft' ? 'Review' : 'View'}</a>{p.status === 'draft' && <> <button className="btn danger sm" onClick={() => remove(p)}>Delete</button></>}</td></tr>)}
             {list && !list.length && <tr><td colSpan={7} className="muted">No purchases yet.</td></tr>}</tbody></table>
       </div>
     </div>
