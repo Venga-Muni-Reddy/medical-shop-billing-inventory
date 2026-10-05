@@ -135,8 +135,8 @@ function Purchases() {
       <div className="card tw">
         <table><thead><tr><th>#</th><th>Supplier</th><th>Invoice</th><th>Lines</th><th>Added by</th><th>Status</th><th></th></tr></thead>
           <tbody>{list && list.map(p => <tr key={p.id}><td>{p.id}</td><td>{p.supplier || '-'}</td><td>{p.invoice_no || '-'} {p.invoice_date && <span className="muted">({fdate(p.invoice_date)})</span>}</td><td>{p.lines}</td>
-            <td>{p.source === 'ai' ? 'AI reading' : 'Manual'}</td>
-            <td>{p.status === 'draft' ? <span className="tag t-draft">Needs review</span> : <span className="tag t-ok">In stock</span>}</td>
+            <td>{p.source === 'ai' ? 'Uploaded file' : 'Typed in'}</td>
+            <td>{p.status === 'draft' ? (p.source === 'ai' && !p.lines ? <span className="tag t-low">AI reading failed</span> : <span className="tag t-draft">Needs review</span>) : <span className="tag t-ok">In stock</span>}</td>
             <td><a className="btn ghost sm" href={'#/purchases/' + p.id}>{p.status === 'draft' ? 'Review' : 'View'}</a></td></tr>)}
             {list && !list.length && <tr><td colSpan={7} className="muted">No purchases yet.</td></tr>}</tbody></table>
       </div>
@@ -148,7 +148,7 @@ const blank = { name: '', size: '', batch_no: '', expiry: '', qty: 0, purchase_p
 
 function PurchaseEdit({ id }) {
   const [p, setP] = useState(null); const [d, setD] = useState(null); const [err, setErr] = useState(''); const [msg, setMsg] = useState(''); const [busy, setBusy] = useState(false)
-  const load = useCallback(() => api('/purchases/' + id).then(r => { setP(r); setD(r.draft) }).catch(e => setErr(e.message)), [id])
+  const load = useCallback(() => api('/purchases/' + id).then(r => { setP(r); setD(r.draft.items && r.draft.items.length === 0 && r.status === 'draft' ? { ...r.draft, items: [{ ...blank }] } : r.draft) }).catch(e => setErr(e.message)), [id])
   useEffect(() => { load() }, [load])
   if (!p || !d) return <p className={err ? 'err' : 'muted'}>{err || 'Loading...'}</p>
   const ro = p.status !== 'draft'
@@ -160,6 +160,7 @@ function PurchaseEdit({ id }) {
     setBusy(true); setErr(''); setMsg('')
     try { await put('/purchases/' + id, d); await post('/purchases/' + id + '/confirm'); go('#/inventory') } catch (x) { setErr(x.message) } finally { setBusy(false) }
   }
+  const retry = async () => { setBusy(true); setErr(''); setMsg('Reading the invoice again with AI... up to a minute.'); try { const r = await post('/purchases/' + id + '/reextract'); setP(r); setD(r.draft.items.length ? r.draft : { ...r.draft, items: [{ ...blank }] }); setMsg(r.lines ? 'Done. Check the lines below.' : '') } catch (x) { setErr(x.message); setMsg('') } finally { setBusy(false) } }
   const del = async () => { if (confirm_('Delete this draft?')) { await api('/purchases/' + id, { method: 'DELETE' }); go('#/purchases') } }
   const confirm_ = m => window.confirm(m)
   const I = (k, props = {}) => <input value={d[k] ?? ''} onChange={e => set(k, e.target.value)} disabled={ro} {...props} />
@@ -168,6 +169,8 @@ function PurchaseEdit({ id }) {
       <p><a href="#/purchases">&larr; All purchases</a></p>
       <h2>{ro ? 'Purchase #' + p.id : 'Review invoice #' + p.id}</h2>
       {p.source === 'ai' && !ro && <div className="hint">The AI filled this in from your file{p.extractor ? ' (' + p.extractor + ')' : ''}. AI can make mistakes: check each line against the document, fix anything wrong, then press <b>Confirm and add to stock</b>.</div>}
+      {p.has_doc && !ro && p.source === 'ai' && <p><button className="btn ghost sm" disabled={busy} onClick={retry}>Read this file with AI again</button> <span className="muted">(free AI models are sometimes busy; you can also type the lines yourself)</span></p>}
+      {p.source === 'manual' && !ro && <div className="hint">Manual entry: fill in the supplier and add each medicine line below, then press <b>Confirm and add to stock</b>.</div>}
       {p.warnings.length > 0 && !ro && <div className="warns"><b>Please check:</b><ul>{p.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul></div>}
       <div className="split two">
         <div>
