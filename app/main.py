@@ -331,8 +331,13 @@ def alert_run(req: Request):
 @app.get("/api/products/search")
 def search_products(req: Request, q: str = ""):
     o = owner_of(req)
-    like = "%" + q.strip().lower().replace("%", "") + "%"
-    rows = batch_rows(o["id"], "AND b.qty_on_hand > 0 AND (b.expiry IS NULL OR b.expiry >= current_date) AND lower(p.name) LIKE %s", (like,))
+    toks = [t for t in re.split(r"\s+", q.strip().lower()) if t][:6]
+    cond, prm = "", []
+    for t in toks:  # every word must match the name, size, batch number or supplier
+        like = "%" + t.replace("\\", "").replace("%", "").replace("_", "") + "%"
+        cond += " AND (lower(p.name) LIKE %s OR lower(coalesce(p.size,'')) LIKE %s OR lower(b.batch_no) LIKE %s OR lower(coalesce(s.name,'')) LIKE %s)"
+        prm += [like] * 4
+    rows = batch_rows(o["id"], "AND b.qty_on_hand > 0 AND (b.expiry IS NULL OR b.expiry >= current_date)" + cond, tuple(prm))
     prods = {}
     for r in jsonable(rows):
         p = prods.setdefault(r["product_id"], {"product_id": r["product_id"], "name": r["name"], "size": r["size"], "batches": []})
