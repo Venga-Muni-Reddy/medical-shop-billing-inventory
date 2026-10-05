@@ -227,11 +227,11 @@ function PurchaseEdit({ id }) {
 }
 
 function Inventory() {
-  const [rows, setRows] = useState(null); const [f, setF] = useState('all'); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null); const [err, setErr] = useState('')
-  const load = () => api('/inventory').then(setRows).catch(e => setErr(e.message))
-  useEffect(() => { load() }, [])
+  const [rows, setRows] = useState(null); const [f, setF] = useState('all'); const [q, setQ] = useState(''); const [edit, setEdit] = useState(null); const [err, setErr] = useState(''); const [empty, setEmpty] = useState(false)
+  const load = () => api('/inventory' + (empty ? '?show_empty=true' : '')).then(setRows).catch(e => setErr(e.message))
+  useEffect(() => { load() }, [empty])
   if (!rows) return <p className="muted">{err || 'Loading...'}</p>
-  const shown = rows.filter(r => (f === 'all' || (f === 'low' && r.low_stock) || (f === 'near' && r.near_expiry) || (f === 'expired' && r.expired)) && (!q || (r.name + ' ' + r.batch_no).toLowerCase().includes(q.toLowerCase())))
+  const shown = rows.filter(r => (f === 'all' || (f === 'low' && r.low_stock) || (f === 'near' && r.near_expiry) || (f === 'expired' && r.expired)) && q.toLowerCase().split(/\s+/).filter(Boolean).every(t => (r.name + ' ' + (r.size || '') + ' ' + r.batch_no + ' ' + (r.supplier || '')).toLowerCase().includes(t)))
   const saveEdit = async () => { try { await put('/batches/' + edit.id, { batch_no: edit.batch_no, expiry: edit.expiry, qty_on_hand: Number(edit.qty_on_hand), purchase_price: edit.purchase_price === '' ? null : edit.purchase_price, mrp: edit.mrp === '' ? null : edit.mrp }); setEdit(null); load() } catch (x) { setErr(x.message) } }
   const thr = async r => { const v = prompt('Low-stock alert level for ' + r.name + ' (leave empty to use the shop default):', ''); if (v === null) return; try { await put('/products/' + r.product_id + '/threshold', { low_stock_threshold: v === '' ? null : Number(v) }); load() } catch (x) { setErr(x.message) } }
   return (
@@ -239,7 +239,8 @@ function Inventory() {
       <h2>Stock by batch</h2>
       <div className="row" style={{ marginBottom: 12 }}>
         {[['all', 'All'], ['low', 'Low stock'], ['near', 'Expiring soon'], ['expired', 'Expired']].map(([k, l]) => <button key={k} className={'btn sm ' + (f === k ? '' : 'ghost')} onClick={() => setF(k)}>{l}</button>)}
-        <input placeholder="Search medicine or batch" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 260 }} />
+        <input placeholder="Search medicine, size, batch or supplier" value={q} onChange={e => setQ(e.target.value)} style={{ maxWidth: 300 }} />
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', margin: 0 }}><input type="checkbox" checked={empty} onChange={e => setEmpty(e.target.checked)} style={{ width: 'auto', minWidth: 0 }} /> Show sold-out batches</label>
       </div>
       {err && <p className="err">{err}</p>}
       <div className="card tw"><table><thead><tr><th>Medicine</th><th>Size</th><th>Batch</th><th>Expiry</th><th>In stock</th><th>Buy price</th><th>MRP</th><th>Supplier</th><th>Status</th><th></th></tr></thead>
@@ -255,14 +256,15 @@ function Inventory() {
           <tr key={r.id}><td><b>{r.name}</b></td><td>{r.size}</td><td>{r.batch_no}</td><td>{fdate(r.expiry)}</td><td>{r.qty_on_hand}</td><td>{money(r.purchase_price)}</td><td>{money(r.mrp)}</td><td>{r.supplier || '-'}</td>
             <td>{r.expired && <span className="tag t-exp">Expired</span>}{r.near_expiry && <span className="tag t-near">Expires in {r.days_left}d</span>}{r.low_stock && <span className="tag t-low">Low stock</span>}{!r.expired && !r.near_expiry && !r.low_stock && <span className="tag t-ok">OK</span>}</td>
             <td><button className="btn ghost sm" onClick={() => setEdit({ ...r })}>Edit</button> <button className="btn ghost sm" onClick={() => thr(r)}>Alert level</button></td></tr>))}
-          {!shown.length && <tr><td colSpan={10} className="muted">Nothing to show.</td></tr>}</tbody></table></div>
+          {!shown.length && <tr><td colSpan={10} className="muted">{q ? 'No stock matches "' + q + '". ' + (empty ? '' : 'Tick "Show sold-out batches" to include medicines with 0 stock.') : 'Nothing to show.'}</td></tr>}</tbody></table></div>
     </div>
   )
 }
 
 function Sell() {
   const [q, setQ] = useState(''); const [res, setRes] = useState([]); const [cart, setCart] = useState([]); const [cust, setCust] = useState(''); const [err, setErr] = useState(''); const [done, setDone] = useState(null); const [busy, setBusy] = useState(false)
-  useEffect(() => { const t = setTimeout(() => api('/products/search?q=' + encodeURIComponent(q)).then(setRes).catch(() => {}), 200); return () => clearTimeout(t) }, [q, done])
+  const [soldOut, setSoldOut] = useState(false)
+  useEffect(() => { let live = true; const t = setTimeout(() => api('/products/search?q=' + encodeURIComponent(q)).then(r => { if (!live) return; setRes(r); setSoldOut(false); if (!r.length && q.trim()) api('/inventory?show_empty=true').then(all => { if (live) setSoldOut(all.some(x => q.toLowerCase().split(/\s+/).filter(Boolean).every(w => (x.name + ' ' + (x.size || '') + ' ' + x.batch_no).toLowerCase().includes(w)))) }).catch(() => {}) }).catch(() => {}), 200); return () => { live = false; clearTimeout(t) } }, [q, done])
   const add = (p, b) => {
     if (cart.some(c => c.batch.id === b.id)) return
     setCart([...cart, { p, batch: b, qty: 1, price: b.mrp ?? b.purchase_price ?? 0 }]); setErr('')
@@ -280,8 +282,8 @@ function Sell() {
       {done && <div className="card okmsg"><b>Bill #{done.id} saved. Total {money(done.total)}.</b> Stock has been reduced. <button className="btn ghost sm" onClick={() => setDone(null)}>Start another</button></div>}
       <div className="split two">
         <div className="card"><h3>1. Find the medicine</h3>
-          <input placeholder="Type medicine name" value={q} onChange={e => setQ(e.target.value)} autoFocus />
-          {res.length === 0 && <p className="muted">{q ? 'No in-stock medicine matches.' : 'No stock yet. Add a purchase first.'}</p>}
+          <input placeholder="Type medicine name, size or batch no." value={q} onChange={e => setQ(e.target.value)} autoFocus />
+          {res.length === 0 && <p className="muted">{q ? (soldOut ? 'That medicine exists but has no sellable stock (sold out or expired). Add a purchase to restock it.' : 'No medicine matches "' + q + '". Try part of the name, size or batch number.') : 'No stock yet. Add a purchase first.'}</p>}
           {res.map(p => <div key={p.product_id} style={{ marginTop: 10 }}><b>{p.name}</b> <span className="muted">{p.size}</span>
             <div className="tw"><table><tbody>{p.batches.map(b => <tr key={b.id}><td>Batch {b.batch_no}</td><td>exp {fdate(b.expiry)}</td><td>{b.qty_on_hand} left</td><td>{money(b.mrp ?? b.purchase_price)}</td>
               <td><button className="btn sm" onClick={() => add(p, b)}>Add</button></td></tr>)}</tbody></table></div></div>)}
