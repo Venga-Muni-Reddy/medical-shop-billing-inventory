@@ -35,6 +35,12 @@ def pdf_to_images(data: bytes, max_pages=3):
         out.append(p.get_pixmap(dpi=130).tobytes("png"))
     return out
 
+def pdf_text(data: bytes, max_pages=3) -> str:
+    import fitz
+    doc = fitz.open(stream=data, filetype="pdf")
+    t = "\n".join(p.get_text() for p in list(doc)[:max_pages]).strip()
+    return t if len(t) > 150 else ""
+
 def parse_json(txt: str) -> dict:
     txt = re.sub(r"^```(?:json)?|```$", "", txt.strip(), flags=re.M).strip()
     m = re.search(r"\{.*\}", txt, re.S)
@@ -50,31 +56,41 @@ class OpenRouterVision(Extractor):
         self.used = None
     def extract(self, data, mime):
         if not self.key: raise ExtractionError("AI extraction is not configured (no API key). Use manual entry.")
-        images = pdf_to_images(data) if mime == "application/pdf" else [data]
-        content = [{"type": "text", "text": PROMPT}] + [
-            {"type": "image_url", "image_url": {"url": "data:%s;base64,%s" % ("image/png" if mime == "application/pdf" else mime, base64.b64encode(i).decode())}} for i in images]
-        last = "no model answered"; t0 = time.time()
-        for attempt in range(2):
-            if attempt:
+        images, text = ([data], "")
+        if mime == "application/pdf":
+            images, text = pdf_to_images(data), pdf_text(data)
+        img_parts = [{"type": "image_url", "image_url": {"url": "data:%s;base64,%s" % ("image/png" if mime == "application/pdf" else mime, base64.b64encode(i).decode())}} for i in images]
+        extra = ("\n\nThe document's own text layer (may lose table structure; use together with the image if given):\n" + text[:12000]) if text else ""
+        plans = []
+        if text:  # text-only first: faster and more reliable than reading pixels
+            tm = [m.strip() for m in os.environ.get("TEXT_MODELS", "google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,thinkingmachines/inkling:free,nvidia/nemotron-3-ultra-550b-a55b:free").split(",") if m.strip()]
+            plans += [(m, [{"type": "text", "text": PROMPT + extra}]) for m in tm]
+        plans += [(m, [{"type": "text", "text": PROMPT + extra}] + img_parts) for m in self.models]
+        errs, t0 = [], time.time()
+        for rnd in range(2):
+            if rnd:
                 if time.time() - t0 > 60: break
                 time.sleep(5)
             busy = False
-            for model in self.models:
-                if time.time() - t0 > 80: break
+            for model, content in plans:
+                if time.time() - t0 > 85: break
                 try:
-                    r = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=40,
+                    r = httpx.post("https://openrouter.ai/api/v1/chat/completions", timeout=35,
                                    headers={"Authorization": f"Bearer {self.key}"},
                                    json={"model": model, "temperature": 0, "max_tokens": 4000, "messages": [{"role": "user", "content": content}]})
                     if r.status_code != 200:
-                        last = f"{model}: HTTP {r.status_code}"; print("OCR_FAIL", model, r.status_code, r.text[:300], flush=True); busy = busy or r.status_code in (429, 502, 503); continue
+                        errs.append(f"{model.split('/')[-1]}: HTTP {r.status_code}"); busy = busy or r.status_code in (429, 502, 503)
+                        print("OCR_FAIL", model, r.status_code, r.text[:200], flush=True); continue
                     msg = r.json()["choices"][0]["message"].get("content") or ""
                     raw = parse_json(msg)
-                    self.used = model
+                    if not (raw.get("items") or raw.get("supplier")): raise ExtractionError("empty result")
+                    self.used = model + (" (text)" if len(content) == 1 else "")
                     return raw
-                except (ExtractionError, httpx.HTTPError, KeyError, IndexError) as ex_:
-                    last = f"{model}: {ex_}"
+                except (ExtractionError, httpx.HTTPError, KeyError, IndexError, ValueError, AttributeError) as ex_:
+                    errs.append(f"{model.split('/')[-1]}: {ex_}"); busy = True
+                    print("OCR_FAIL", model, repr(ex_)[:200], flush=True)
             if not busy: break
-        raise ExtractionError("AI extraction failed (" + last + "). Please enter the invoice manually or try again.")
+        raise ExtractionError("AI extraction failed on every model (" + "; ".join(errs[-4:]) + "). Press retry in a minute or enter it manually.")
 
 EXTRACTORS = {"openrouter-vision": OpenRouterVision}
 
